@@ -65,11 +65,11 @@ services:
     volumes:
       - app-storage:/rails/storage
     ports:
-      - ${PORT:-3000}:3000
+      - ${PORT:-3001}:3000
       # To also publish on IPv6 (dual-stack), uncomment the line below AND
       # set BINDING=:: in the environment block. See docs/hosting/docker.md
       # "Binding to IPv6" for details.
-      # - "[::]:${PORT:-3000}:3000"
+      # - "[::]:${PORT:-3001}:3000"
     restart: unless-stopped
     environment:
       <<: *rails_env
