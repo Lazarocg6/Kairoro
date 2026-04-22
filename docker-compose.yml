@@ -1,0 +1,4 @@
+# Wrapper so `docker compose up` works from the repo root without `-f`.
+# Service definitions: compose.example.yml — see docs/hosting/docker.md
+include:
+  - compose.example.yml
