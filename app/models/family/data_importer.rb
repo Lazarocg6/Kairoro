@@ -97,11 +97,13 @@ class Family::DataImporter
 
         account.save!
 
-        # Set opening balance if we have a historical balance
-        if data["balance"].present?
-          manager = Account::OpeningBalanceManager.new(account)
-          manager.set_opening_balance(balance: data["balance"].to_d)
-        end
+        # NOTE: The opening balance is intentionally NOT set from `data["balance"]`.
+        # `data["balance"]` is the CURRENT balance (after every transaction/valuation
+        # has been applied). If we seeded an opening anchor with that value and then
+        # imported all the transactions, the final balance would be doubled.
+        # The opening anchor is restored later by import_valuations via the exported
+        # Valuation records (which carry their own kind). Family sync recalculates
+        # balances from entries once the import is complete.
 
         @id_mappings[:accounts][old_id] = account.id
         @created_accounts << account
@@ -120,6 +122,13 @@ class Family::DataImporter
         # Store parent relationship for second pass
         parent_mappings[old_id] = parent_id if parent_id.present?
 
+        # Reuse existing category with the same name to avoid uniqueness conflicts
+        existing = @family.categories.find_by(name: data["name"])
+        if existing
+          @id_mappings[:categories][old_id] = existing.id
+          next
+        end
+
         category = @family.categories.build(
           name: data["name"],
           color: data["color"] || Category::UNCATEGORIZED_COLOR,
@@ -131,7 +140,7 @@ class Family::DataImporter
         @id_mappings[:categories][old_id] = category.id
       end
 
-      # Second pass: establish parent relationships
+      # Second pass: establish parent relationships (only for categories we created)
       parent_mappings.each do |old_id, old_parent_id|
         new_id = @id_mappings[:categories][old_id]
         new_parent_id = @id_mappings[:categories][old_parent_id]
@@ -139,6 +148,9 @@ class Family::DataImporter
         next unless new_id && new_parent_id
 
         category = @family.categories.find(new_id)
+        # Avoid overwriting an existing parent on a reused category
+        next if category.parent_id.present?
+
         category.update!(parent_id: new_parent_id)
       end
     end
@@ -147,6 +159,12 @@ class Family::DataImporter
       records.each do |record|
         data = record["data"]
         old_id = data["id"]
+
+        existing = @family.tags.find_by(name: data["name"])
+        if existing
+          @id_mappings[:tags][old_id] = existing.id
+          next
+        end
 
         tag = @family.tags.build(
           name: data["name"],
@@ -162,6 +180,12 @@ class Family::DataImporter
       records.each do |record|
         data = record["data"]
         old_id = data["id"]
+
+        existing = @family.merchants.find_by(name: data["name"])
+        if existing
+          @id_mappings[:merchants][old_id] = existing.id
+          next
+        end
 
         merchant = @family.merchants.build(
           name: data["name"],
@@ -277,7 +301,23 @@ class Family::DataImporter
 
         account = @family.accounts.find(new_account_id)
 
-        valuation = Valuation.new
+        kind = resolve_valuation_kind(data, account)
+
+        # Avoid creating more than one opening_anchor per account (e.g. if the
+        # destination family pre-seeded one, or the export contains duplicates).
+        if kind == "opening_anchor" && account.valuations.opening_anchor.exists?
+          existing_entry = account.valuations.opening_anchor.first.entry
+          existing_entry.update!(
+            date: Date.parse(data["date"].to_s),
+            amount: data["amount"].to_d,
+            currency: data["currency"] || account.currency,
+            name: data["name"] || Valuation.build_opening_anchor_name(account.accountable_type)
+          )
+          @created_entries << existing_entry
+          next
+        end
+
+        valuation = Valuation.new(kind: kind)
 
         entry = Entry.new(
           account: account,
@@ -293,14 +333,45 @@ class Family::DataImporter
       end
     end
 
+    # Known opening-anchor names from Valuation::Name (for legacy exports that
+    # didn't include the `kind` field).
+    OPENING_ANCHOR_NAMES = [
+      "Original purchase price", # Property, Vehicle
+      "Original principal",      # Loan
+      "Opening account value",   # Investment, Crypto, OtherAsset
+      "Opening balance"          # Depository, CreditCard, etc.
+    ].freeze
+
+    def resolve_valuation_kind(data, account)
+      explicit = data["kind"].presence
+      return explicit if Valuation.kinds.key?(explicit)
+
+      name = data["name"].to_s.strip
+      return "opening_anchor" if OPENING_ANCHOR_NAMES.include?(name)
+
+      "reconciliation"
+    end
+
     def import_budgets(records)
       records.each do |record|
         data = record["data"]
         old_id = data["id"]
 
+        start_date = Date.parse(data["start_date"].to_s)
+        end_date = Date.parse(data["end_date"].to_s)
+
+        # Reuse an existing budget for the same period if one already exists in
+        # the destination family (Budget has a uniqueness validation on
+        # start_date and end_date scoped to family).
+        existing = @family.budgets.find_by(start_date: start_date, end_date: end_date)
+        if existing
+          @id_mappings[:budgets][old_id] = existing.id
+          next
+        end
+
         budget = @family.budgets.build(
-          start_date: Date.parse(data["start_date"].to_s),
-          end_date: Date.parse(data["end_date"].to_s),
+          start_date: start_date,
+          end_date: end_date,
           budgeted_spending: data["budgeted_spending"]&.to_d,
           expected_income: data["expected_income"]&.to_d,
           currency: data["currency"] || @family.currency
@@ -324,6 +395,11 @@ class Family::DataImporter
         next unless new_category_id
 
         budget = @family.budgets.find(new_budget_id)
+
+        # Avoid creating duplicate budget_categories for a reused budget.
+        if budget.budget_categories.exists?(category_id: new_category_id)
+          next
+        end
 
         budget_category = budget.budget_categories.build(
           category_id: new_category_id,
