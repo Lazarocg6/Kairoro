@@ -1,0 +1,29 @@
+---
+en:
+  time_categories:
+    uncategorized: Uncategorized
+    index:
+      title: Time categories
+      new: New category
+      delete_all: Delete all
+      empty: "You haven't created any time categories yet."
+      bootstrap: Add starter categories
+    new:
+      title: New time category
+    edit:
+      title: Edit time category
+    form:
+      placeholder: "e.g. Deep Work, Sleep, Reading"
+    create:
+      success: "Category created."
+    update:
+      success: "Category updated."
+    destroy:
+      success: "Category deleted."
+    destroy_all:
+      success: "All categories deleted."
+    bootstrap:
+      success: "Starter categories added."
+    time_category:
+      edit: Edit
+      delete: Delete

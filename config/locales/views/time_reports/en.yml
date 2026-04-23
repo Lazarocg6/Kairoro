@@ -1,0 +1,42 @@
+---
+en:
+  time_reports:
+    index:
+      title: Time reports
+      period_type: Period
+      start_date: From
+      end_date: To
+      total: Total time
+      daily_average: Daily average
+      over_days:
+        one: "over 1 day"
+        other: "over %{count} days"
+      blocks_logged: Blocks logged
+      previous_blocks:
+        one: "1 in previous period"
+        other: "%{count} in previous period"
+      distinct_categories: Active categories
+      distribution: Distribution
+      flow: Flow
+      comparison: "Category comparison vs previous period"
+      category: Category
+      current: Current
+      previous: Previous
+      change: Change
+      daily_avg: Daily avg
+      new: new
+      vs_previous: vs previous
+      no_data: "No time logged for this period."
+      daily_activity: Daily activity
+    periods:
+      this_week: This week
+      last_week: Last week
+      this_month: This month
+      last_month: Last month
+      last_30: Last 30 days
+      last_90: Last 90 days
+      ytd: Year to date
+      custom: Custom range
+    sankey:
+      center: All time
+      direct: Direct

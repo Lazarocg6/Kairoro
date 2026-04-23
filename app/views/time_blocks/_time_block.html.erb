@@ -1,0 +1,43 @@
+<%# locals: (time_block:) %>
+<%= tag.div id: dom_id(time_block), class: "flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-surface-hover" do %>
+  <div class="flex items-center gap-3 min-w-0">
+    <%= time_category_avatar(time_block.time_category) %>
+    <div class="min-w-0">
+      <div class="text-sm font-medium text-primary truncate">
+        <% if time_block.time_category %>
+          <%= time_block.time_category.name_with_parent %>
+        <% else %>
+          <span class="text-secondary"><%= t("time_blocks.index.uncategorized") %></span>
+        <% end %>
+      </div>
+      <div class="text-xs text-secondary">
+        <%= l(time_block.started_at, format: :short) %>
+        <% if time_block.started_at.to_date == time_block.ended_at.to_date %>
+          &ndash; <%= time_block.ended_at.strftime("%H:%M") %>
+        <% else %>
+          &ndash; <%= l(time_block.ended_at, format: :short) %>
+        <% end %>
+        &middot; <%= time_block.duration_label %>
+      </div>
+      <% if time_block.notes.present? %>
+        <div class="text-xs text-secondary italic truncate"><%= time_block.notes %></div>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="flex items-center gap-1 shrink-0">
+    <%= render DS::Link.new(
+      href: edit_time_block_path(time_block),
+      icon: "pencil",
+      variant: "icon",
+      frame: :modal
+    ) %>
+
+    <%= button_to time_block_path(time_block),
+        method: :delete,
+        class: "inline-flex items-center justify-center w-8 h-8 rounded-lg text-secondary hover:text-destructive hover:bg-surface-hover",
+        form: { data: { turbo_confirm: t("time_blocks.index.confirm_delete") } } do %>
+      <%= icon("trash-2", size: "sm") %>
+    <% end %>
+  </div>
+<% end %>

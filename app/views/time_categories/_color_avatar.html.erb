@@ -1,0 +1,8 @@
+<%# locals: (time_category:) %>
+
+<span
+      data-category-target="avatar"
+      class="w-14 h-14 flex items-center justify-center rounded-full"
+      style="background-color: color-mix(in oklab, <%= time_category.color %> 10%, transparent); color: <%= time_category.color %>">
+  <%= icon(time_category.lucide_icon, size: "2xl", color: "current") %>
+</span>

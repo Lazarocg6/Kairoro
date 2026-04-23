@@ -1,0 +1,13 @@
+---
+en:
+  time_category:
+    deletions:
+      new:
+        delete_time_category: Delete time category
+        explanation: "What should happen to time blocks currently assigned to %{category_name}?"
+        replacement_prompt: "Reassign to..."
+        category: Replace with
+        delete_and_leave_uncategorized: "Delete and leave blocks uncategorized"
+        delete_and_recategorize: "Delete and move blocks to selected category"
+      create:
+        success: "Category deleted."

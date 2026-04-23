@@ -1,0 +1,18 @@
+work:
+  name: Work
+  color: "#6471eb"
+  lucide_icon: briefcase
+  family: dylan_family
+
+deep_work:
+  name: Deep Work
+  color: "#6471eb"
+  lucide_icon: brain
+  parent: work
+  family: dylan_family
+
+leisure:
+  name: Leisure
+  color: "#a855f7"
+  lucide_icon: drama
+  family: dylan_family

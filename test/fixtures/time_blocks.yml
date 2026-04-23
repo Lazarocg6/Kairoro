@@ -1,0 +1,14 @@
+work_today:
+  family: dylan_family
+  user: family_admin
+  time_category: deep_work
+  started_at: <%= 2.hours.ago %>
+  ended_at: <%= 1.hour.ago %>
+  notes: "Coding session"
+
+leisure_yesterday:
+  family: dylan_family
+  user: family_admin
+  time_category: leisure
+  started_at: <%= 1.day.ago - 1.hour %>
+  ended_at: <%= 1.day.ago %>

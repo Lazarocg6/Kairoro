@@ -1,0 +1,43 @@
+---
+en:
+  time_blocks:
+    nav:
+      register: Register
+      reports: Reports
+      categories: Categories
+    index:
+      title: Time
+      register_title: Register a time block
+      recent: Recently registered
+      empty: "No time blocks yet. Add your first one to the left."
+      today: Today
+      this_week: This week
+      view_reports: View reports
+      bootstrap: Add starter categories
+      new_category: New category
+      no_categories_title: "Start by creating categories"
+      no_categories_description: "You need at least one category to register your time."
+      uncategorized: Uncategorized
+      confirm_delete: "Delete this time block?"
+    new:
+      title: New time block
+    edit:
+      title: Edit time block
+    form:
+      started_at: Start
+      ended_at: End
+      category: Category
+      category_prompt: Pick a category
+      notes: Notes
+      notes_placeholder: "Optional notes"
+      add: Add block
+      save: Save changes
+      cancel: Cancel
+    create:
+      success: "Time block recorded."
+    update:
+      success: "Time block updated."
+    destroy:
+      success: "Time block deleted."
+    bulk_destroy:
+      success: "Selected time blocks were deleted."

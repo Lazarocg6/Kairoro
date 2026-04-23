@@ -1,4 +1,119 @@
-# Wrapper so `docker compose up` works from the repo root without `-f`.
-# Service definitions: compose.example.yml — see docs/hosting/docker.md
-include:
-  - compose.example.yml
+# ---------------------------------------------------------------------------
+# Local development compose file.
+#
+# Builds the Rails image from this working copy so your changes are included
+# when you run:
+#
+#   docker compose up --build
+#
+# This mirrors the service layout in compose.example.yml but points `web` and
+# `worker` at a locally built image (`kairoro-web:local`) instead of the
+# upstream `ghcr.io/we-promise/sure:stable`.
+#
+# To run against the upstream published image instead:
+#
+#   docker compose -f compose.example.yml up
+# ---------------------------------------------------------------------------
+
+x-db-env: &db_env
+  POSTGRES_USER: ${POSTGRES_USER:-sure_user}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sure_password}
+  POSTGRES_DB: ${POSTGRES_DB:-sure_production}
+
+x-rails-env: &rails_env
+  <<: *db_env
+  SECRET_KEY_BASE: ${SECRET_KEY_BASE:-a7523c3d0ae56415046ad8abae168d71074a79534a7062258f8d1d51ac2f76d3c3bc86d86b6b0b307df30d9a6a90a2066a3fa9e67c5e6f374dbd7dd4e0778e13}
+  SELF_HOSTED: "true"
+  RAILS_FORCE_SSL: "false"
+  RAILS_ASSUME_SSL: "false"
+  DB_HOST: db
+  DB_PORT: 5432
+  REDIS_URL: redis://redis:6379/1
+  OPENAI_ACCESS_TOKEN: ${OPENAI_ACCESS_TOKEN}
+
+services:
+  web:
+    image: kairoro-web:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - app-storage:/rails/storage
+    ports:
+      - ${PORT:-3001}:3000
+    restart: unless-stopped
+    environment:
+      <<: *rails_env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    networks:
+      - sure_net
+
+  worker:
+    # Reuses the image built by `web` so Docker doesn't try to build and tag
+    # `kairoro-web:local` twice in parallel (BuildKit/bake would error with
+    # "image already exists"). Always bring `web` up or rebuild with
+    # `docker compose up --build`.
+    image: kairoro-web:local
+    pull_policy: never
+    depends_on:
+      web:
+        condition: service_started
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: bundle exec sidekiq
+    volumes:
+      - app-storage:/rails/storage
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    environment:
+      <<: *rails_env
+    networks:
+      - sure_net
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      <<: *db_env
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sure_net
+
+  redis:
+    image: redis:latest
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sure_net
+
+volumes:
+  app-storage:
+  postgres-data:
+  redis-data:
+
+networks:
+  sure_net:
+    driver: bridge

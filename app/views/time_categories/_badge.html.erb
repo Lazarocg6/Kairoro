@@ -1,0 +1,17 @@
+<%# locals: (time_category:) %>
+<% time_category ||= TimeCategory.uncategorized %>
+
+<div class="min-w-0 w-full">
+  <span class="flex w-full items-center gap-1 text-sm font-medium rounded-full px-1.5 py-1 border focus-visible:outline-none focus-visible:ring-0"
+        style="
+          background-color: color-mix(in oklab, <%= time_category.color %> 10%, transparent);
+          border-color: color-mix(in oklab, <%= time_category.color %> 10%, transparent);
+          color: <%= time_category.color %>;">
+    <% if time_category.lucide_icon.present? %>
+      <span class="shrink-0">
+        <%= icon time_category.lucide_icon, size: "sm", color: "current" %>
+      </span>
+    <% end %>
+    <span class="min-w-0 flex-1 truncate"><%= time_category.name %></span>
+  </span>
+</div>

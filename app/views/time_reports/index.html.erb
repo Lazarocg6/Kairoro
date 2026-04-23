@@ -1,0 +1,206 @@
+<div class="flex items-center justify-between mb-4 gap-3 flex-wrap">
+  <h1 class="text-primary text-xl font-medium"><%= t("time_reports.index.title") %></h1>
+  <%= render "time_blocks/nav", active: "reports" %>
+</div>
+
+<div class="space-y-4 pb-6">
+  <%# Period filter %>
+  <div class="bg-container rounded-xl shadow-border-xs p-4">
+    <%= form_with url: time_reports_path, method: :get, data: { controller: "auto-submit-form", turbo_frame: "_top" }, class: "flex flex-wrap items-end gap-3" do |form| %>
+      <div class="flex flex-col gap-1">
+        <label class="text-xs text-secondary font-medium uppercase tracking-wide" for="period_type"><%= t("time_reports.index.period_type") %></label>
+        <%= form.select :period_type,
+              [
+                [ t("time_reports.periods.this_week"),   "this_week" ],
+                [ t("time_reports.periods.last_week"),   "last_week" ],
+                [ t("time_reports.periods.this_month"),  "this_month" ],
+                [ t("time_reports.periods.last_month"),  "last_month" ],
+                [ t("time_reports.periods.last_30"),     "last_30_days" ],
+                [ t("time_reports.periods.last_90"),     "last_90_days" ],
+                [ t("time_reports.periods.ytd"),         "ytd" ],
+                [ t("time_reports.periods.custom"),      "custom" ]
+              ],
+              { selected: @period_type.to_s },
+              data: { "auto-submit-form-target": "auto" },
+              class: "bg-container border border-secondary font-medium rounded-lg px-3 py-2 text-sm pr-7 cursor-pointer text-primary focus:outline-hidden focus:ring-0" %>
+      </div>
+
+      <% if @period_type == :custom %>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs text-secondary font-medium uppercase tracking-wide" for="start_date"><%= t("time_reports.index.start_date") %></label>
+          <%= form.date_field :start_date, value: @start_date, class: "form-field__input", data: { "auto-submit-form-target": "auto" } %>
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs text-secondary font-medium uppercase tracking-wide" for="end_date"><%= t("time_reports.index.end_date") %></label>
+          <%= form.date_field :end_date, value: @end_date, class: "form-field__input", data: { "auto-submit-form-target": "auto" } %>
+        </div>
+      <% end %>
+
+      <div class="ml-auto text-sm text-secondary">
+        <%= l(@start_date, format: :long) %> &ndash; <%= l(@end_date, format: :long) %>
+      </div>
+    <% end %>
+  </div>
+
+  <%# Summary cards %>
+  <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+    <div class="bg-container rounded-xl shadow-border-xs p-4">
+      <p class="text-xs text-secondary uppercase tracking-wide"><%= t("time_reports.index.total") %></p>
+      <p class="text-2xl font-medium text-primary"><%= format_minutes(@total_current_minutes) %></p>
+      <% if @total_previous_minutes > 0 %>
+        <% diff = @total_current_minutes - @total_previous_minutes %>
+        <p class="text-xs <%= diff >= 0 ? 'text-success' : 'text-destructive' %>">
+          <%= diff >= 0 ? "+" : "" %><%= format_minutes(diff.abs) %>
+          <span class="text-secondary"><%= t("time_reports.index.vs_previous") %></span>
+        </p>
+      <% end %>
+    </div>
+
+    <div class="bg-container rounded-xl shadow-border-xs p-4">
+      <p class="text-xs text-secondary uppercase tracking-wide"><%= t("time_reports.index.daily_average") %></p>
+      <p class="text-2xl font-medium text-primary">
+        <%= format_minutes((@total_current_minutes.to_f / @days_in_period).round) %>
+      </p>
+      <p class="text-xs text-secondary"><%= t("time_reports.index.over_days", count: @days_in_period) %></p>
+    </div>
+
+    <div class="bg-container rounded-xl shadow-border-xs p-4">
+      <p class="text-xs text-secondary uppercase tracking-wide"><%= t("time_reports.index.blocks_logged") %></p>
+      <p class="text-2xl font-medium text-primary"><%= @current_blocks.size %></p>
+      <p class="text-xs text-secondary">
+        <%= t("time_reports.index.previous_blocks", count: @previous_blocks.size) %>
+      </p>
+    </div>
+
+    <div class="bg-container rounded-xl shadow-border-xs p-4">
+      <p class="text-xs text-secondary uppercase tracking-wide"><%= t("time_reports.index.distinct_categories") %></p>
+      <p class="text-2xl font-medium text-primary"><%= @current_totals.keys.count %></p>
+    </div>
+  </div>
+
+  <%# Pie (donut) + Sankey side-by-side %>
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="bg-container rounded-xl shadow-border-xs p-6">
+      <h2 class="text-lg font-medium mb-4"><%= t("time_reports.index.distribution") %></h2>
+      <% if @pie_segments.any? %>
+        <div class="min-h-[300px]" data-controller="donut-chart" data-donut-chart-segments-value="<%= @pie_segments.to_json %>">
+          <div data-donut-chart-target="chartContainer" class="h-[300px]"></div>
+          <div data-donut-chart-target="contentContainer" class="hidden">
+            <div data-donut-chart-target="defaultContent"></div>
+            <% @pie_segments.each do |seg| %>
+              <div id="segment_<%= seg[:id] %>" class="hidden"></div>
+            <% end %>
+          </div>
+        </div>
+
+        <ul class="mt-4 space-y-1.5">
+          <% @pie_segments.each do |seg| %>
+            <% pct = @total_current_minutes.zero? ? 0 : (seg[:amount].to_f / @total_current_minutes * 100).round(1) %>
+            <li class="flex items-center justify-between gap-3 text-sm">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: <%= seg[:color] %>"></span>
+                <span class="text-primary truncate"><%= seg[:name] %></span>
+              </div>
+              <div class="flex items-center gap-3 text-secondary shrink-0">
+                <span><%= format_minutes(seg[:amount]) %></span>
+                <span class="tabular-nums"><%= pct %>%</span>
+              </div>
+            </li>
+          <% end %>
+        </ul>
+      <% else %>
+        <div class="py-16 text-center text-secondary text-sm">
+          <%= t("time_reports.index.no_data") %>
+        </div>
+      <% end %>
+    </div>
+
+    <div class="bg-container rounded-xl shadow-border-xs p-6">
+      <h2 class="text-lg font-medium mb-4"><%= t("time_reports.index.flow") %></h2>
+      <% if @sankey_data[:links].present? %>
+        <div class="w-full h-[360px]"
+             data-controller="sankey-chart"
+             data-sankey-chart-data-value="<%= @sankey_data.to_json %>"
+             data-sankey-chart-currency-symbol-value=""></div>
+      <% else %>
+        <div class="py-16 text-center text-secondary text-sm">
+          <%= t("time_reports.index.no_data") %>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <%# Comparison table %>
+  <div class="bg-container rounded-xl shadow-border-xs p-6">
+    <h2 class="text-lg font-medium mb-4"><%= t("time_reports.index.comparison") %></h2>
+
+    <% if @category_rows.any? %>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-xs text-secondary uppercase tracking-wide">
+              <th class="text-left py-2 font-medium"><%= t("time_reports.index.category") %></th>
+              <th class="text-right py-2 font-medium"><%= t("time_reports.index.current") %></th>
+              <th class="text-right py-2 font-medium"><%= t("time_reports.index.previous") %></th>
+              <th class="text-right py-2 font-medium"><%= t("time_reports.index.change") %></th>
+              <th class="text-right py-2 font-medium"><%= t("time_reports.index.daily_avg") %></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-tertiary">
+            <% @category_rows.each do |row| %>
+              <tr>
+                <td class="py-2">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: <%= row[:color] %>"></span>
+                    <span class="text-primary"><%= row[:name] %></span>
+                  </div>
+                </td>
+                <td class="py-2 text-right tabular-nums text-primary"><%= format_minutes(row[:current_minutes]) %></td>
+                <td class="py-2 text-right tabular-nums text-secondary"><%= format_minutes(row[:previous_minutes]) %></td>
+                <td class="py-2 text-right tabular-nums <%= row[:delta].positive? ? 'text-success' : (row[:delta].negative? ? 'text-destructive' : 'text-secondary') %>">
+                  <% if row[:previous_minutes].zero? && row[:current_minutes] > 0 %>
+                    <%= t("time_reports.index.new") %>
+                  <% elsif row[:delta] != 0 %>
+                    <%= row[:delta].positive? ? "+" : "-" %><%= format_minutes(row[:delta].abs) %>
+                    (<%= row[:percent_change].positive? ? "+" : "" %><%= row[:percent_change] %>%)
+                  <% else %>
+                    <span class="text-secondary">&mdash;</span>
+                  <% end %>
+                </td>
+                <td class="py-2 text-right tabular-nums text-secondary">
+                  <%= format_minutes((row[:current_minutes].to_f / @days_in_period).round) %>
+                </td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <p class="text-sm text-secondary text-center py-12"><%= t("time_reports.index.no_data") %></p>
+    <% end %>
+  </div>
+
+  <%# Daily activity bars %>
+  <% if @daily_series.any? { |d| d[:minutes] > 0 } %>
+    <div class="bg-container rounded-xl shadow-border-xs p-6">
+      <h2 class="text-lg font-medium mb-4"><%= t("time_reports.index.daily_activity") %></h2>
+      <% max = @daily_series.map { |d| d[:minutes] }.max.to_f %>
+      <div class="flex items-end gap-0.5 h-32">
+        <% @daily_series.each do |day| %>
+          <% pct = max.zero? ? 0 : (day[:minutes] / max * 100).round %>
+          <div class="flex-1 h-full flex flex-col justify-end items-center group relative">
+            <div
+              class="w-full rounded-sm"
+              style="height: <%= pct %>%; background-color: var(--color-gray-400); min-height: 1px;"
+              title="<%= l(day[:date], format: :long) %>: <%= format_minutes(day[:minutes]) %>">
+            </div>
+          </div>
+        <% end %>
+      </div>
+      <div class="flex justify-between mt-2 text-xs text-secondary">
+        <span><%= l(@daily_series.first[:date], format: :short) %></span>
+        <span><%= l(@daily_series.last[:date], format: :short) %></span>
+      </div>
+    </div>
+  <% end %>
+</div>

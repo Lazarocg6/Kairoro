@@ -1,0 +1,33 @@
+<%# locals: (time_block:, time_categories:) %>
+
+<%= styled_form_with model: time_block,
+    url: time_block.persisted? ? time_block_path(time_block) : time_blocks_path,
+    class: "space-y-4" do |f| %>
+  <% if time_block.errors.any? %>
+    <%= render "shared/form_errors", model: time_block %>
+  <% end %>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+    <%= f.datetime_local_field :started_at,
+        label: t("time_blocks.form.started_at"),
+        required: true,
+        value: (time_block.started_at || Time.zone.now - 30.minutes).strftime("%Y-%m-%dT%H:%M") %>
+
+    <%= f.datetime_local_field :ended_at,
+        label: t("time_blocks.form.ended_at"),
+        required: true,
+        value: (time_block.ended_at || Time.zone.now).strftime("%Y-%m-%dT%H:%M") %>
+  </div>
+
+  <%= f.select :time_category_id,
+      time_categories.map { |c| [ c.name_with_parent, c.id ] },
+      { prompt: t("time_blocks.form.category_prompt"), label: t("time_blocks.form.category"), include_blank: false },
+      required: false %>
+
+  <%= f.text_area :notes,
+      label: t("time_blocks.form.notes"),
+      placeholder: t("time_blocks.form.notes_placeholder"),
+      rows: 2 %>
+
+  <%= f.submit(time_block.persisted? ? t("time_blocks.form.save") : t("time_blocks.form.add")) %>
+<% end %>

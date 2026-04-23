@@ -1,0 +1,26 @@
+<%# locals: (active: "register") %>
+<div class="flex items-center gap-2">
+  <%= link_to time_blocks_path, class: class_names(
+        "px-3 py-1.5 text-sm rounded-lg font-medium",
+        active == "register" ? "bg-container text-primary shadow-border-xs" : "text-secondary hover:text-primary"
+      ) do %>
+    <%= icon("pencil", size: "sm") %>
+    <%= t("time_blocks.nav.register") %>
+  <% end %>
+
+  <%= link_to time_reports_path, class: class_names(
+        "px-3 py-1.5 text-sm rounded-lg font-medium",
+        active == "reports" ? "bg-container text-primary shadow-border-xs" : "text-secondary hover:text-primary"
+      ) do %>
+    <%= icon("chart-pie", size: "sm") %>
+    <%= t("time_blocks.nav.reports") %>
+  <% end %>
+
+  <%= link_to time_categories_path, class: class_names(
+        "px-3 py-1.5 text-sm rounded-lg font-medium",
+        active == "categories" ? "bg-container text-primary shadow-border-xs" : "text-secondary hover:text-primary"
+      ) do %>
+    <%= icon("shapes", size: "sm") %>
+    <%= t("time_blocks.nav.categories") %>
+  <% end %>
+</div>

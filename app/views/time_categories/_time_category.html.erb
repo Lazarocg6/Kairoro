@@ -1,0 +1,25 @@
+<%# locals: (time_category:) %>
+
+<div id="<%= dom_id(time_category) %>" class="flex items-center gap-3 px-4 pb-4 <%= "pt-4" unless time_category.subcategory? %> <%= "pb-4" unless time_category.subcategories.any? %> bg-container">
+  <div class="flex min-w-0 flex-1 items-center gap-2.5">
+    <% if time_category.subcategory? %>
+      <span style="color: <%= time_category.color %>">
+        <%= icon "corner-down-right", size: "sm", color: "current", class: "ml-2" %>
+      </span>
+    <% end %>
+
+    <%= render partial: "time_categories/badge", locals: { time_category: time_category } %>
+  </div>
+
+  <div class="shrink-0">
+    <%= render DS::Menu.new do |menu| %>
+      <% menu.with_item(variant: "link", text: t(".edit"), icon: "pencil", href: edit_time_category_path(time_category), data: { turbo_frame: :modal }) %>
+
+      <% if time_category.time_blocks.any? %>
+        <% menu.with_item(variant: "link", text: t(".delete"), icon: "trash-2", href: new_time_category_deletion_path(time_category), destructive: true, data: { turbo_frame: :modal }) %>
+      <% else %>
+        <% menu.with_item(variant: "button", text: t(".delete"), icon: "trash-2", href: time_category_path(time_category), method: :delete) %>
+      <% end %>
+    <% end %>
+  </div>
+</div>

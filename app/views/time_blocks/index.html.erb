@@ -1,0 +1,76 @@
+<div class="flex items-center justify-between mb-4 gap-3 flex-wrap">
+  <h1 class="text-primary text-xl font-medium"><%= t("time_blocks.index.title") %></h1>
+  <%= render "time_blocks/nav", active: "register" %>
+</div>
+
+<% if @time_categories.empty? %>
+  <div class="bg-container rounded-xl shadow-border-xs p-6 mb-4 flex items-center justify-between gap-3">
+    <div>
+      <p class="text-sm font-medium text-primary"><%= t("time_blocks.index.no_categories_title") %></p>
+      <p class="text-xs text-secondary"><%= t("time_blocks.index.no_categories_description") %></p>
+    </div>
+    <div class="flex items-center gap-2">
+      <%= button_to t("time_blocks.index.bootstrap"),
+          bootstrap_time_categories_path,
+          method: :post,
+          class: "btn btn-outline" %>
+      <%= render DS::Link.new(
+        text: t("time_blocks.index.new_category"),
+        variant: "primary",
+        icon: "plus",
+        href: new_time_category_path,
+        frame: :modal
+      ) %>
+    </div>
+  </div>
+<% end %>
+
+<div class="grid grid-cols-1 lg:grid-cols-5 gap-4 pb-6">
+  <%# Left: form and summary %>
+  <div class="lg:col-span-3 space-y-4">
+    <div class="bg-container rounded-xl shadow-border-xs p-5">
+      <h2 class="text-lg font-medium text-primary mb-4"><%= t("time_blocks.index.register_title") %></h2>
+      <%= render "time_blocks/form", time_block: @time_block, time_categories: @time_categories %>
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+      <div class="bg-container rounded-xl shadow-border-xs p-4">
+        <p class="text-xs text-secondary"><%= t("time_blocks.index.today") %></p>
+        <p class="text-2xl font-medium text-primary"><%= format_minutes(@today_minutes) %></p>
+      </div>
+      <div class="bg-container rounded-xl shadow-border-xs p-4">
+        <p class="text-xs text-secondary"><%= t("time_blocks.index.this_week") %></p>
+        <p class="text-2xl font-medium text-primary"><%= format_minutes(@week_minutes) %></p>
+      </div>
+    </div>
+  </div>
+
+  <%# Right: recent blocks %>
+  <div class="lg:col-span-2">
+    <div class="bg-container rounded-xl shadow-border-xs p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-base font-medium text-primary"><%= t("time_blocks.index.recent") %></h2>
+        <%= render DS::Link.new(
+          text: t("time_blocks.index.view_reports"),
+          variant: "secondary",
+          icon: "chart-pie",
+          href: time_reports_path
+        ) %>
+      </div>
+
+      <% if @recent_blocks.any? %>
+        <ul class="divide-y divide-tertiary">
+          <% @recent_blocks.each do |block| %>
+            <li class="py-1">
+              <%= render "time_blocks/time_block", time_block: block %>
+            </li>
+          <% end %>
+        </ul>
+      <% else %>
+        <div class="py-8 text-center">
+          <p class="text-sm text-secondary"><%= t("time_blocks.index.empty") %></p>
+        </div>
+      <% end %>
+    </div>
+  </div>
+</div>

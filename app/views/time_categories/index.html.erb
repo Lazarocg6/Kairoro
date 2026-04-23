@@ -1,0 +1,52 @@
+<div class="flex items-center justify-between mb-4 gap-3 flex-wrap">
+  <h1 class="text-primary text-xl font-medium"><%= t("time_categories.index.title") %></h1>
+  <div class="flex items-center gap-2">
+    <%= render "time_blocks/nav", active: "categories" %>
+
+    <%= render DS::Menu.new do |menu| %>
+      <% menu.with_item(
+          variant: "button",
+          text: t("time_categories.index.delete_all"),
+          href: destroy_all_time_categories_path,
+          method: :delete,
+          icon: "trash-2",
+          confirm: CustomConfirm.for_resource_deletion("all time categories", high_severity: true)) %>
+    <% end %>
+
+    <%= render DS::Link.new(
+      text: t("time_categories.index.new"),
+      variant: "primary",
+      icon: "plus",
+      href: new_time_category_path,
+      frame: :modal
+    ) %>
+  </div>
+</div>
+
+<div class="bg-container rounded-xl shadow-border-xs p-4">
+  <% if @time_categories.any? %>
+    <div class="space-y-4">
+      <%= render "time_categories/list_group", title: t("time_categories.index.title"), time_categories: @time_categories %>
+    </div>
+  <% else %>
+    <div class="flex justify-center items-center py-20">
+      <div class="text-center flex flex-col items-center max-w-[500px]">
+        <p class="text-sm text-secondary mb-4"><%= t("time_categories.index.empty") %></p>
+        <div class="flex items-center gap-2">
+          <%= button_to t("time_categories.index.bootstrap"),
+              bootstrap_time_categories_path,
+              method: :post,
+              class: "btn btn-outline" %>
+
+          <%= render DS::Link.new(
+            text: t("time_categories.index.new"),
+            variant: "outline",
+            icon: "plus",
+            href: new_time_category_path,
+            frame: :modal
+          ) %>
+        </div>
+      </div>
+    </div>
+  <% end %>
+</div>

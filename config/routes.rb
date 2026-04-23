@@ -241,6 +241,24 @@ Rails.application.routes.draw do
     resources :budget_categories, only: %i[index show update]
   end
 
+  # Time tracking
+  resources :time_blocks, only: %i[index new create edit update destroy] do
+    collection do
+      delete :bulk_destroy
+    end
+  end
+
+  resources :time_categories, except: :show do
+    collection do
+      post :bootstrap
+      delete :destroy_all
+    end
+
+    resources :deletions, only: %i[new create], module: :time_category
+  end
+
+  resources :time_reports, only: %i[index]
+
   resources :family_merchants, only: %i[index new create edit update destroy] do
     collection do
       get :merge

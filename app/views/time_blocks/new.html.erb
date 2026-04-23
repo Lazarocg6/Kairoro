@@ -1,0 +1,6 @@
+<%= render DS::Dialog.new do |dialog| %>
+  <% dialog.with_header(title: t("time_blocks.new.title")) %>
+  <% dialog.with_body do %>
+    <%= render "time_blocks/form", time_block: @time_block, time_categories: @time_categories %>
+  <% end %>
+<% end %>
