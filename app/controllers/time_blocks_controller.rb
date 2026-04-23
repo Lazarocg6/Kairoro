@@ -84,12 +84,19 @@ class TimeBlocksController < ApplicationController
       params.require(:time_block).permit(:time_category_id, :started_at, :ended_at, :notes)
     end
 
+    # Start a new block where the previous one ended so rapid/bulk entry
+    # flows continuously. Falls back to 30 minutes ago if there's no prior block.
     def default_started_at
-      now = Time.zone.now
-      now - 30.minutes
+      @default_started_at ||= begin
+        last_block = Current.family.time_blocks
+          .for_user(Current.user)
+          .order(ended_at: :desc)
+          .first
+        last_block&.ended_at || (Time.zone.now - 30.minutes)
+      end
     end
 
     def default_ended_at
-      Time.zone.now
+      default_started_at + 30.minutes
     end
 end
