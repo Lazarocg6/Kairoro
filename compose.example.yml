@@ -41,6 +41,13 @@
 #
 # Or use explicit DNS servers that prefer IPv4 (already configured below).
 #
+# IMPORTANT: `name` pins the Compose project (and therefore the volume names
+# like `<project>_postgres-data`). Keeping this value stable prevents Docker
+# from creating fresh, empty volumes if you rename or relocate the repo
+# folder. Change it only if you actually want a separate, independent stack.
+#
+
+name: kairoro
 
 x-db-env: &db_env
   POSTGRES_USER: ${POSTGRES_USER:-sure_user}

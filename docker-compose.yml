@@ -13,7 +13,14 @@
 # To run against the upstream published image instead:
 #
 #   docker compose -f compose.example.yml up
+#
+# IMPORTANT: `name` pins the Compose project (and therefore the volume names
+# like `<project>_postgres-data`). Do NOT change this value or you'll create
+# fresh, empty volumes and "lose" your database. If you ever rename the repo
+# folder, the DB will stay put because the project name is pinned here.
 # ---------------------------------------------------------------------------
+
+name: kairoro
 
 x-db-env: &db_env
   POSTGRES_USER: ${POSTGRES_USER:-sure_user}

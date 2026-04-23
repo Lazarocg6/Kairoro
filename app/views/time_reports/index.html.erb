@@ -4,7 +4,7 @@
 </div>
 
 <div class="space-y-4 pb-6">
-  <%# Period filter %>
+  <%# Period + category filter %>
   <div class="bg-container rounded-xl shadow-border-xs p-4">
     <%= form_with url: time_reports_path, method: :get, data: { controller: "auto-submit-form", turbo_frame: "_top" }, class: "flex flex-wrap items-end gap-3" do |form| %>
       <div class="flex flex-col gap-1">
@@ -21,6 +21,15 @@
                 [ t("time_reports.periods.custom"),      "custom" ]
               ],
               { selected: @period_type.to_s },
+              data: { "auto-submit-form-target": "auto" },
+              class: "bg-container border border-secondary font-medium rounded-lg px-3 py-2 text-sm pr-7 cursor-pointer text-primary focus:outline-hidden focus:ring-0" %>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label class="text-xs text-secondary font-medium uppercase tracking-wide" for="time_category_id"><%= t("time_reports.index.filter_category") %></label>
+        <%= form.select :time_category_id,
+              @root_categories.map { |c| [ c.name, c.id ] },
+              { selected: @selected_category&.id, include_blank: t("time_reports.index.all_categories") },
               data: { "auto-submit-form-target": "auto" },
               class: "bg-container border border-secondary font-medium rounded-lg px-3 py-2 text-sm pr-7 cursor-pointer text-primary focus:outline-hidden focus:ring-0" %>
       </div>
@@ -42,72 +51,78 @@
     <% end %>
   </div>
 
-  <%# Summary cards %>
-  <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-    <div class="bg-container rounded-xl shadow-border-xs p-4">
-      <p class="text-xs text-secondary uppercase tracking-wide"><%= t("time_reports.index.total") %></p>
-      <p class="text-2xl font-medium text-primary"><%= format_minutes(@total_current_minutes) %></p>
-      <% if @total_previous_minutes > 0 %>
-        <% diff = @total_current_minutes - @total_previous_minutes %>
-        <p class="text-xs <%= diff >= 0 ? 'text-success' : 'text-destructive' %>">
-          <%= diff >= 0 ? "+" : "" %><%= format_minutes(diff.abs) %>
-          <span class="text-secondary"><%= t("time_reports.index.vs_previous") %></span>
+  <%# Summary cards + line graph %>
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="space-y-4">
+      <div class="bg-container rounded-xl shadow-border-xs p-4">
+        <p class="text-xs text-secondary uppercase tracking-wide"><%= t("time_reports.index.total") %></p>
+        <p class="text-2xl font-medium text-primary"><%= format_minutes(@total_current_minutes) %></p>
+        <% if @total_previous_minutes > 0 %>
+          <% diff = @total_current_minutes - @total_previous_minutes %>
+          <p class="text-xs <%= diff >= 0 ? 'text-success' : 'text-destructive' %>">
+            <%= diff >= 0 ? "+" : "" %><%= format_minutes(diff.abs) %>
+            <span class="text-secondary"><%= t("time_reports.index.vs_previous") %></span>
+          </p>
+        <% end %>
+      </div>
+
+      <div class="bg-container rounded-xl shadow-border-xs p-4">
+        <p class="text-xs text-secondary uppercase tracking-wide"><%= t("time_reports.index.daily_average") %></p>
+        <p class="text-2xl font-medium text-primary">
+          <%= format_minutes((@total_current_minutes.to_f / @days_in_period).round) %>
         </p>
+        <p class="text-xs text-secondary"><%= t("time_reports.index.over_days", count: @days_in_period) %></p>
+      </div>
+    </div>
+
+    <div class="bg-container rounded-xl shadow-border-xs p-6 lg:col-span-2">
+      <h2 class="text-lg font-medium mb-4"><%= t("time_reports.index.evolution") %></h2>
+      <% if @chart_data[:values].any? { |v| v[:value].positive? } %>
+        <div id="time-evolution-chart"
+             class="w-full h-56"
+             data-controller="time-series-chart"
+             data-time-series-chart-data-value="<%= @chart_data.to_json %>"></div>
+      <% else %>
+        <div class="py-16 text-center text-secondary text-sm">
+          <%= t("time_reports.index.no_data") %>
+        </div>
       <% end %>
-    </div>
-
-    <div class="bg-container rounded-xl shadow-border-xs p-4">
-      <p class="text-xs text-secondary uppercase tracking-wide"><%= t("time_reports.index.daily_average") %></p>
-      <p class="text-2xl font-medium text-primary">
-        <%= format_minutes((@total_current_minutes.to_f / @days_in_period).round) %>
-      </p>
-      <p class="text-xs text-secondary"><%= t("time_reports.index.over_days", count: @days_in_period) %></p>
-    </div>
-
-    <div class="bg-container rounded-xl shadow-border-xs p-4">
-      <p class="text-xs text-secondary uppercase tracking-wide"><%= t("time_reports.index.blocks_logged") %></p>
-      <p class="text-2xl font-medium text-primary"><%= @current_blocks.size %></p>
-      <p class="text-xs text-secondary">
-        <%= t("time_reports.index.previous_blocks", count: @previous_blocks.size) %>
-      </p>
-    </div>
-
-    <div class="bg-container rounded-xl shadow-border-xs p-4">
-      <p class="text-xs text-secondary uppercase tracking-wide"><%= t("time_reports.index.distinct_categories") %></p>
-      <p class="text-2xl font-medium text-primary"><%= @current_totals.keys.count %></p>
     </div>
   </div>
 
-  <%# Pie (donut) + Sankey side-by-side %>
+  <%# Pie (donut) with total in center + Sankey side-by-side %>
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
     <div class="bg-container rounded-xl shadow-border-xs p-6">
       <h2 class="text-lg font-medium mb-4"><%= t("time_reports.index.distribution") %></h2>
       <% if @pie_segments.any? %>
-        <div class="min-h-[300px]" data-controller="donut-chart" data-donut-chart-segments-value="<%= @pie_segments.to_json %>">
-          <div data-donut-chart-target="chartContainer" class="h-[300px]"></div>
-          <div data-donut-chart-target="contentContainer" class="hidden">
-            <div data-donut-chart-target="defaultContent"></div>
+        <div class="relative h-[320px]"
+             data-controller="donut-chart"
+             data-donut-chart-segments-value="<%= @pie_segments.to_json %>">
+          <div data-donut-chart-target="chartContainer" class="absolute inset-0 pointer-events-none"></div>
+
+          <div data-donut-chart-target="contentContainer" class="flex justify-center items-center h-full">
+            <div data-donut-chart-target="defaultContent" class="flex flex-col items-center">
+              <p class="text-3xl font-medium text-primary"><%= format_minutes(@total_current_minutes) %></p>
+              <% if @selected_category %>
+                <p class="text-sm text-secondary mt-1"><%= @selected_category.name %></p>
+              <% end %>
+            </div>
+
             <% @pie_segments.each do |seg| %>
-              <div id="segment_<%= seg[:id] %>" class="hidden"></div>
+              <% pct = @total_current_minutes.zero? ? 0 : (seg[:amount].to_f / @total_current_minutes * 100).round(1) %>
+              <div id="segment_<%= seg[:id] %>" class="hidden">
+                <div class="flex flex-col items-center gap-1">
+                  <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: <%= seg[:color] %>"></span>
+                    <span class="text-sm text-secondary truncate max-w-[180px]"><%= seg[:name] %></span>
+                  </div>
+                  <p class="text-3xl font-medium text-primary"><%= format_minutes(seg[:amount]) %></p>
+                  <p class="text-xs text-secondary tabular-nums"><%= pct %>%</p>
+                </div>
+              </div>
             <% end %>
           </div>
         </div>
-
-        <ul class="mt-4 space-y-1.5">
-          <% @pie_segments.each do |seg| %>
-            <% pct = @total_current_minutes.zero? ? 0 : (seg[:amount].to_f / @total_current_minutes * 100).round(1) %>
-            <li class="flex items-center justify-between gap-3 text-sm">
-              <div class="flex items-center gap-2 min-w-0">
-                <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: <%= seg[:color] %>"></span>
-                <span class="text-primary truncate"><%= seg[:name] %></span>
-              </div>
-              <div class="flex items-center gap-3 text-secondary shrink-0">
-                <span><%= format_minutes(seg[:amount]) %></span>
-                <span class="tabular-nums"><%= pct %>%</span>
-              </div>
-            </li>
-          <% end %>
-        </ul>
       <% else %>
         <div class="py-16 text-center text-secondary text-sm">
           <%= t("time_reports.index.no_data") %>
@@ -179,28 +194,4 @@
       <p class="text-sm text-secondary text-center py-12"><%= t("time_reports.index.no_data") %></p>
     <% end %>
   </div>
-
-  <%# Daily activity bars %>
-  <% if @daily_series.any? { |d| d[:minutes] > 0 } %>
-    <div class="bg-container rounded-xl shadow-border-xs p-6">
-      <h2 class="text-lg font-medium mb-4"><%= t("time_reports.index.daily_activity") %></h2>
-      <% max = @daily_series.map { |d| d[:minutes] }.max.to_f %>
-      <div class="flex items-end gap-0.5 h-32">
-        <% @daily_series.each do |day| %>
-          <% pct = max.zero? ? 0 : (day[:minutes] / max * 100).round %>
-          <div class="flex-1 h-full flex flex-col justify-end items-center group relative">
-            <div
-              class="w-full rounded-sm"
-              style="height: <%= pct %>%; background-color: var(--color-gray-400); min-height: 1px;"
-              title="<%= l(day[:date], format: :long) %>: <%= format_minutes(day[:minutes]) %>">
-            </div>
-          </div>
-        <% end %>
-      </div>
-      <div class="flex justify-between mt-2 text-xs text-secondary">
-        <span><%= l(@daily_series.first[:date], format: :short) %></span>
-        <span><%= l(@daily_series.last[:date], format: :short) %></span>
-      </div>
-    </div>
-  <% end %>
 </div>
