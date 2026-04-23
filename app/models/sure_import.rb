@@ -38,6 +38,7 @@ class SureImport < Import
         merchants: counts["Merchant"] || 0,
         transactions: counts["Transaction"] || 0,
         trades: counts["Trade"] || 0,
+        transfers: counts["Transfer"] || 0,
         valuations: counts["Valuation"] || 0,
         budgets: counts["Budget"] || 0,
         budget_categories: counts["BudgetCategory"] || 0,

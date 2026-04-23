@@ -223,6 +223,26 @@ class Family::DataExporter
         }.to_json
       end
 
+      # Export transfers (links between inflow/outflow transactions)
+      transfer_account_ids = @family.accounts.pluck(:id)
+      Transfer
+        .joins(inflow_transaction: { entry: :account })
+        .where(accounts: { family_id: @family.id })
+        .find_each do |transfer|
+          lines << {
+            type: "Transfer",
+            data: {
+              id: transfer.id,
+              inflow_transaction_id: transfer.inflow_transaction_id,
+              outflow_transaction_id: transfer.outflow_transaction_id,
+              status: transfer.status,
+              notes: transfer.notes,
+              created_at: transfer.created_at,
+              updated_at: transfer.updated_at
+            }
+          }.to_json
+        end
+
       # Export valuations
       @family.entries.valuations.includes(:account, :entryable).find_each do |entry|
         lines << {

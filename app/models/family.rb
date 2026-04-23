@@ -199,7 +199,19 @@ class Family < ApplicationRecord
         duplicate_ids = duplicates.map(&:id)
         categories.where(parent_id: duplicate_ids).update_all(parent_id: keeper.id)
         Transaction.where(category_id: duplicate_ids).update_all(category_id: keeper.id)
+
+        # For budget_categories, avoid the unique constraint on
+        # (budget_id, category_id): if a budget already has a row pointing at
+        # the keeper, drop the duplicate's row for that budget instead of
+        # trying to reassign it (which would collide with the unique index).
+        conflicting_budget_ids = BudgetCategory.where(category_id: keeper.id).pluck(:budget_id)
+        if conflicting_budget_ids.any?
+          BudgetCategory
+            .where(category_id: duplicate_ids, budget_id: conflicting_budget_ids)
+            .delete_all
+        end
         BudgetCategory.where(category_id: duplicate_ids).update_all(category_id: keeper.id)
+
         categories.where(id: duplicate_ids).delete_all
       end
 

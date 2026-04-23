@@ -1,5 +1,5 @@
 class Family::DataImporter
-  SUPPORTED_TYPES = %w[Account Category Tag Merchant Transaction Trade Valuation Budget BudgetCategory Rule].freeze
+  SUPPORTED_TYPES = %w[Account Category Tag Merchant Transaction Trade Valuation Transfer Budget BudgetCategory Rule].freeze
   ACCOUNTABLE_TYPES = Accountable::TYPES.freeze
 
   def initialize(family, ndjson_content)
@@ -10,6 +10,7 @@ class Family::DataImporter
       categories: {},
       tags: {},
       merchants: {},
+      transactions: {},
       budgets: {},
       securities: {}
     }
@@ -28,11 +29,18 @@ class Family::DataImporter
       import_merchants(records["Merchant"] || [])
       import_transactions(records["Transaction"] || [])
       import_trades(records["Trade"] || [])
+      import_transfers(records["Transfer"] || [])
       import_valuations(records["Valuation"] || [])
       import_budgets(records["Budget"] || [])
       import_budget_categories(records["BudgetCategory"] || [])
       import_rules(records["Rule"] || [])
     end
+
+    # Reconnect transfer pairs that were not present as explicit Transfer records
+    # in the export (e.g. exports produced before Transfer was serialized). This
+    # only matches inflow/outflow pairs with opposite amounts within Sure's
+    # standard date window, which is the same algorithm Sure uses elsewhere.
+    @family.auto_match_transfers! rescue nil
 
     { accounts: @created_accounts, entries: @created_entries }
   end
@@ -124,6 +132,18 @@ class Family::DataImporter
 
         # Reuse existing category with the same name to avoid uniqueness conflicts
         existing = @family.categories.find_by(name: data["name"])
+
+        # Investment Contributions is a special, locale-aware default category.
+        # The incoming record may carry the source family's localized name
+        # (e.g. English "Investment Contributions") while the destination
+        # family was seeded with another locale's name (e.g. Spanish
+        # "Aportaciones a inversiones"). Treat all locale variants as the same
+        # category so we don't end up with duplicates that later break the
+        # legacy consolidation in Family#investment_contributions_category.
+        if existing.nil? && Category.all_investment_contributions_names.include?(data["name"])
+          existing = @family.categories.where(name: Category.all_investment_contributions_names).first
+        end
+
         if existing
           @id_mappings[:categories][old_id] = existing.id
           next
@@ -245,12 +265,41 @@ class Family::DataImporter
 
         entry.save!
 
+        # Track the mapping so transfers can be reconnected later
+        if data["id"].present?
+          @id_mappings[:transactions][data["id"]] = transaction.id
+        end
+
         # Add tags through the tagging association
         new_tag_ids.each do |tag_id|
           transaction.taggings.create!(tag_id: tag_id)
         end
 
         @created_entries << entry
+      end
+    end
+
+    def import_transfers(records)
+      records.each do |record|
+        data = record["data"]
+
+        new_inflow_id = @id_mappings[:transactions][data["inflow_transaction_id"]]
+        new_outflow_id = @id_mappings[:transactions][data["outflow_transaction_id"]]
+        next unless new_inflow_id && new_outflow_id
+
+        # Skip if either transaction is already part of a transfer (uniqueness)
+        if Transfer.where(inflow_transaction_id: new_inflow_id)
+                   .or(Transfer.where(outflow_transaction_id: new_outflow_id))
+                   .exists?
+          next
+        end
+
+        Transfer.create!(
+          inflow_transaction_id: new_inflow_id,
+          outflow_transaction_id: new_outflow_id,
+          status: data["status"].presence || "confirmed",
+          notes: data["notes"]
+        )
       end
     end
 
