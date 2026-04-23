@@ -344,7 +344,11 @@ class ReportsController < ApplicationController
 
     def build_transactions_breakdown
       # Base query: all transactions in the period
-      # Exclude transfers, one-time, and CC payments (matching income_statement logic)
+      # Exclude transfers, one-time, and CC payments (matching income_statement logic).
+      # Trades are intentionally excluded here as well: the money spent on a trade
+      # already shows up as an `investment_contribution` transfer transaction, so
+      # counting both would double-count the same cash flow. See
+      # IncomeStatement::Totals#trades_subquery_sql for the same rationale.
       transactions = Transaction
         .joins(:entry)
         .joins(entry: :account)
@@ -355,16 +359,6 @@ class ReportsController < ApplicationController
 
       # Apply filters (includes finance account scoping)
       transactions = apply_transaction_filters(transactions)
-
-      # Get trades in the period (matching income_statement logic)
-      trades = Trade
-        .joins(:entry)
-        .joins(entry: :account)
-        .where(accounts: { family_id: Current.family.id, status: [ "draft", "active" ] })
-        .where(entries: { entryable_type: "Trade", excluded: false, date: @period.date_range })
-        .includes(entry: :account, category: :parent)
-
-      trades = apply_entry_filters(trades)
 
       # Get sort parameters
       sort_by = params[:sort_by] || "amount"
@@ -385,8 +379,8 @@ class ReportsController < ApplicationController
         { category_id: category.id, category_name: category.name, category_color: category.color, category_icon: category.lucide_icon, total: 0, count: 0 }
       end
 
-      # Helper to process an entry (transaction or trade)
-      process_entry = ->(category, entry, is_trade) do
+      # Helper to process a transaction entry
+      process_entry = ->(category, entry) do
         type = entry.amount > 0 ? "expense" : "income"
         begin
           converted_amount = Money.new(entry.amount.abs, entry.currency).exchange_to(family_currency).amount
@@ -395,14 +389,8 @@ class ReportsController < ApplicationController
         end
 
         if category.nil?
-          # Uncategorized or Other Investments (for trades)
-          if is_trade
-            parent_key = [ :other_investments, type ]
-            grouped_data[parent_key] ||= init_category_group.call(:other_investments, Category.other_investments.name, Category.other_investments.color, Category.other_investments.lucide_icon, type)
-          else
-            parent_key = [ :uncategorized, type ]
-            grouped_data[parent_key] ||= init_category_group.call(:uncategorized, Category.uncategorized.name, Category.uncategorized.color, Category.uncategorized.lucide_icon, type)
-          end
+          parent_key = [ :uncategorized, type ]
+          grouped_data[parent_key] ||= init_category_group.call(:uncategorized, Category.uncategorized.name, Category.uncategorized.color, Category.uncategorized.lucide_icon, type)
         elsif category.parent_id.present?
           # This is a subcategory - group under parent
           parent = category.parent
@@ -425,12 +413,7 @@ class ReportsController < ApplicationController
 
       # Process transactions
       transactions.each do |transaction|
-        process_entry.call(transaction.category, transaction.entry, false)
-      end
-
-      # Process trades
-      trades.each do |trade|
-        process_entry.call(trade.category, trade.entry, true)
+        process_entry.call(transaction.category, transaction.entry)
       end
 
       # Convert to array and sort subcategories
