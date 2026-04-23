@@ -18,6 +18,8 @@ en:
       distribution: Distribution
       flow: Flow
       evolution: Evolution
+      highlighting: "Highlighting %{name}"
+      other_categories: Other
       comparison: "Category comparison vs previous period"
       category: Category
       current: Current

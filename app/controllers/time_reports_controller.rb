@@ -1,5 +1,7 @@
 class TimeReportsController < ApplicationController
   DEFAULT_CHART_COLOR = "#6471eb".freeze
+  MAX_CHART_SERIES = 10
+  OTHER_SERIES_COLOR = "#a3a3a3".freeze
 
   def index
     @period_type = params[:period_type]&.to_sym || :this_month
@@ -13,8 +15,13 @@ class TimeReportsController < ApplicationController
 
     blocks_scope = Current.family.time_blocks.for_user(Current.user)
 
-    @current_blocks  = scope_blocks(blocks_scope.in_period(@period)).includes(time_category: :parent).to_a
-    @previous_blocks = scope_blocks(blocks_scope.in_period(@previous_period)).includes(time_category: :parent).to_a
+    # Fetch unfiltered, then filter in Ruby so the evolution chart can render
+    # per-category series even when a single category is highlighted.
+    all_current_blocks  = blocks_scope.in_period(@period).includes(time_category: :parent).to_a
+    all_previous_blocks = blocks_scope.in_period(@previous_period).includes(time_category: :parent).to_a
+
+    @current_blocks  = filter_blocks_by_category(all_current_blocks)
+    @previous_blocks = filter_blocks_by_category(all_previous_blocks)
 
     @current_totals  = TimeBlock.aggregate_by_category(@current_blocks)
     @previous_totals = TimeBlock.aggregate_by_category(@previous_blocks)
@@ -24,10 +31,10 @@ class TimeReportsController < ApplicationController
 
     @days_in_period = [ (@end_date - @start_date).to_i + 1, 1 ].max
 
-    @pie_segments  = build_pie_segments(@current_totals, @selected_category)
-    @sankey_data   = build_sankey_data(@current_totals, @selected_category)
-    @category_rows = build_category_comparison_rows(@current_totals, @previous_totals, @selected_category)
-    @chart_data    = build_chart_data(@current_blocks, @start_date, @end_date, @selected_category)
+    @pie_segments       = build_pie_segments(@current_totals, @selected_category)
+    @sankey_data        = build_sankey_data(@current_totals, @selected_category)
+    @category_rows      = build_category_comparison_rows(@current_totals, @previous_totals, @selected_category)
+    @chart_series_data  = build_chart_series_data(all_current_blocks, @start_date, @end_date, @selected_category)
 
     @breadcrumbs = [ [ "Home", root_path ], [ t("time_reports.index.title"), nil ] ]
   end
@@ -84,11 +91,11 @@ class TimeReportsController < ApplicationController
       Current.family.time_categories.roots.includes(:subcategories).find_by(id: id)
     end
 
-    def scope_blocks(scope)
-      return scope unless @selected_category
+    def filter_blocks_by_category(blocks)
+      return blocks unless @selected_category
 
       category_ids = [ @selected_category.id ] + @selected_category.subcategories.pluck(:id)
-      scope.where(time_category_id: category_ids)
+      blocks.select { |b| category_ids.include?(b.time_category_id) }
     end
 
     # Pie / donut segments.
@@ -310,43 +317,91 @@ class TimeReportsController < ApplicationController
       }
     end
 
-    # Produces the data payload consumed by the `time-series-chart` Stimulus
-    # controller. Each point carries its own trend metadata so tooltips render
-    # richly without extra client-side logic.
-    def build_chart_data(blocks, start_date, end_date, selected)
-      per_day = Hash.new(0)
-      blocks.each { |b| per_day[b.started_at.to_date] += b.duration_minutes }
+    # Produces the multi-series payload consumed by the
+    # `multi-line-time-chart` Stimulus controller. One series per root category
+    # (plus an "Uncategorized" bucket if relevant) with per-day minutes.
+    #
+    # When a category is selected from the dropdown, only that series is marked
+    # as `highlighted` so the JS side can dim the rest.
+    def build_chart_series_data(blocks, start_date, end_date, selected)
+      dates = (start_date..end_date).to_a
 
-      color = selected&.color || DEFAULT_CHART_COLOR
+      series_map = {}
 
-      values = []
-      prev_minutes = 0
+      blocks.each do |block|
+        cat  = block.time_category
+        root = cat&.parent || cat
+        key  = root&.id || :uncategorized
 
-      (start_date..end_date).each do |date|
-        minutes = per_day[date]
-        diff = minutes - prev_minutes
-        percent = if prev_minutes.zero?
-          minutes.zero? ? 0.0 : 100.0
-        else
-          ((diff.to_f / prev_minutes) * 100).round(1)
-        end
-
-        values << {
-          date: date.to_s,
-          date_formatted: I18n.l(date, format: :long),
-          value: minutes,
-          trend: {
-            color: color,
-            value: diff,
-            previous: { amount: prev_minutes, formatted: helpers.format_minutes(prev_minutes) },
-            current:  { amount: minutes, formatted: helpers.format_minutes(minutes) },
-            percent_formatted: "#{percent}%"
-          }
+        series_map[key] ||= {
+          id:      root&.id || "uncategorized",
+          name:    root&.name || I18n.t("time_categories.uncategorized", default: "Uncategorized"),
+          color:   root&.color || TimeCategory::UNCATEGORIZED_COLOR,
+          per_day: Hash.new(0)
         }
 
-        prev_minutes = minutes
+        series_map[key][:per_day][block.started_at.to_date] += block.duration_minutes
       end
 
-      { values: values, trend: { color: color } }
+      series = series_map.values.map do |s|
+        total = s[:per_day].values.sum
+        {
+          id:          s[:id],
+          name:        s[:name],
+          color:       s[:color],
+          total:       total,
+          highlighted: selected.nil? || selected.id == s[:id],
+          values:      dates.map { |d| { date: d.to_s, minutes: s[:per_day][d] } }
+        }
+      end
+
+      series.sort_by! { |s| -s[:total] }
+      series = bucket_small_series(series, dates, selected)
+
+      {
+        start_date:            start_date.to_s,
+        end_date:              end_date.to_s,
+        highlighted_series_id: selected&.id,
+        series:                series
+      }
+    end
+
+    # Collapses everything past the top MAX_CHART_SERIES into a single "Other"
+    # line so the chart stays readable with many categories. The currently
+    # highlighted category is always kept in the visible set even if it isn't
+    # in the top N, so the dropdown selection never silently disappears into
+    # the Other bucket.
+    def bucket_small_series(series, dates, selected)
+      return series if series.size <= MAX_CHART_SERIES
+
+      visible = series.first(MAX_CHART_SERIES)
+
+      if selected
+        highlighted = series.find { |s| s[:id] == selected.id }
+        if highlighted && !visible.include?(highlighted)
+          visible = visible.first(MAX_CHART_SERIES - 1) + [ highlighted ]
+        end
+      end
+
+      hidden = series - visible
+      return series if hidden.empty?
+
+      per_day = Hash.new(0)
+      hidden.each do |s|
+        s[:values].each { |v| per_day[v[:date]] += v[:minutes] }
+      end
+
+      other_series = {
+        id:          "other",
+        name:        I18n.t("time_reports.index.other_categories", default: "Other"),
+        color:       OTHER_SERIES_COLOR,
+        total:       per_day.values.sum,
+        # "Other" is never the user's explicit selection, so it gets dimmed
+        # alongside the rest when a category is highlighted.
+        highlighted: selected.nil?,
+        values:      dates.map { |d| { date: d.to_s, minutes: per_day[d.to_s] } }
+      }
+
+      (visible + [ other_series ]).sort_by { |s| -s[:total] }
     end
 end

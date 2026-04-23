@@ -97,12 +97,19 @@
     </div>
 
     <div class="bg-container rounded-xl shadow-border-xs p-6 lg:col-span-2 flex flex-col">
-      <h2 class="text-lg font-medium mb-4"><%= t("time_reports.index.evolution") %></h2>
-      <% if @chart_data[:values].any? { |v| v[:value].positive? } %>
+      <div class="flex items-center justify-between mb-4 gap-3 flex-wrap">
+        <h2 class="text-lg font-medium"><%= t("time_reports.index.evolution") %></h2>
+        <% if @chart_series_data[:series].any? && @selected_category %>
+          <p class="text-xs text-secondary">
+            <%= t("time_reports.index.highlighting", name: @selected_category.name) %>
+          </p>
+        <% end %>
+      </div>
+      <% if @chart_series_data[:series].any? { |s| s[:values].any? { |v| v[:minutes].positive? } } %>
         <div id="time-evolution-chart"
              class="w-full flex-1 min-h-56"
-             data-controller="time-series-chart"
-             data-time-series-chart-data-value="<%= @chart_data.to_json %>"></div>
+             data-controller="multi-line-time-chart"
+             data-multi-line-time-chart-data-value="<%= @chart_series_data.to_json %>"></div>
       <% else %>
         <div class="flex-1 flex items-center justify-center text-secondary text-sm">
           <%= t("time_reports.index.no_data") %>
