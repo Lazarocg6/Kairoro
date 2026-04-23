@@ -173,17 +173,20 @@ class IncomeStatement
       )
     end
 
+    # NOTE: the "v3" token below is a manual cache-buster. Bump it whenever
+    # BUDGET_EXCLUDED_KINDS or the income-statement SQL logic changes, since
+    # `entries_cache_version` only invalidates when entries are written.
     def family_stats(interval: "month")
       @family_stats ||= {}
       @family_stats[interval] ||= Rails.cache.fetch([
-        "income_statement", "family_stats", family.id, user&.id, interval, included_account_ids_hash, family.entries_cache_version
+        "income_statement", "family_stats", "v3", family.id, user&.id, interval, included_account_ids_hash, family.entries_cache_version
       ]) { FamilyStats.new(family, interval:, account_ids: included_account_ids).call }
     end
 
     def category_stats(interval: "month")
       @category_stats ||= {}
       @category_stats[interval] ||= Rails.cache.fetch([
-        "income_statement", "category_stats", family.id, user&.id, interval, included_account_ids_hash, family.entries_cache_version
+        "income_statement", "category_stats", "v3", family.id, user&.id, interval, included_account_ids_hash, family.entries_cache_version
       ]) { CategoryStats.new(family, interval:, account_ids: included_account_ids).call }
     end
 
@@ -199,7 +202,7 @@ class IncomeStatement
       sql_hash = Digest::MD5.hexdigest(transactions_scope.to_sql)
 
       Rails.cache.fetch([
-        "income_statement", "totals_query", "v2", family.id, user&.id, included_account_ids_hash, sql_hash, date_range.begin, date_range.end, family.entries_cache_version
+        "income_statement", "totals_query", "v3", family.id, user&.id, included_account_ids_hash, sql_hash, date_range.begin, date_range.end, family.entries_cache_version
       ]) { Totals.new(family, transactions_scope: transactions_scope, date_range: date_range, included_account_ids: included_account_ids).call }
     end
 
