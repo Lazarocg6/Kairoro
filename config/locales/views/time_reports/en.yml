@@ -40,4 +40,4 @@ en:
       custom: Custom range
     sankey:
       center: All time
-      direct: Direct
+      unsorted: Unsorted

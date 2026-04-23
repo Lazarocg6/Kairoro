@@ -26,6 +26,15 @@ class TimeReportsController < ApplicationController
     @current_totals  = TimeBlock.aggregate_by_category(@current_blocks)
     @previous_totals = TimeBlock.aggregate_by_category(@previous_blocks)
 
+    # When a parent category is selected, all its subs share the parent's
+    # color in the DB (see `TimeCategory#inherit_color_from_parent`). For the
+    # report views we swap those colors for distinct lightness variants of
+    # the parent's hue so each sub line/segment is readable. Only applied
+    # when the dropdown is actually expanding into subs.
+    @subcategory_color_map = build_subcategory_color_map(@selected_category)
+    apply_subcategory_colors!(@current_totals,  @subcategory_color_map) if @subcategory_color_map.any?
+    apply_subcategory_colors!(@previous_totals, @subcategory_color_map) if @subcategory_color_map.any?
+
     @total_current_minutes  = @current_totals.values.sum { |r| r[:minutes] }
     @total_previous_minutes = @previous_totals.values.sum { |r| r[:minutes] }
 
@@ -34,7 +43,7 @@ class TimeReportsController < ApplicationController
     @pie_segments       = build_pie_segments(@current_totals, @selected_category)
     @sankey_data        = build_sankey_data(@current_totals, @selected_category)
     @category_rows      = build_category_comparison_rows(@current_totals, @previous_totals, @selected_category)
-    @chart_series_data  = build_chart_series_data(all_current_blocks, @start_date, @end_date, @selected_category)
+    @chart_series_data  = build_chart_series_data(all_current_blocks, @start_date, @end_date, @selected_category, @subcategory_color_map)
 
     @breadcrumbs = [ [ "Home", root_path ], [ t("time_reports.index.title"), nil ] ]
   end
@@ -100,8 +109,8 @@ class TimeReportsController < ApplicationController
 
     # Pie / donut segments.
     # - No category selected: one segment per root category.
-    # - Root with subcategories selected: one segment per subcategory, plus a
-    #   "Direct" segment for time logged on the root itself.
+    # - Root with subcategories selected: one segment per subcategory, plus an
+    #   "Unsorted" segment for time logged directly on the root itself.
     # - Root without subcategories: a single segment for the root.
     def build_pie_segments(totals, selected)
       if selected&.subcategories&.any?
@@ -120,7 +129,7 @@ class TimeReportsController < ApplicationController
             id: "direct_#{root[:id]}",
             color: root[:color],
             amount: leftover,
-            name: I18n.t("time_reports.sankey.direct", default: "Direct")
+            name: I18n.t("time_reports.sankey.unsorted", default: "Unsorted")
           }
         end
 
@@ -182,7 +191,7 @@ class TimeReportsController < ApplicationController
           direct_key = [ :direct, root[:id] ]
           direct_idx = add_node.call(
             direct_key,
-            I18n.t("time_reports.sankey.direct", default: "Direct"),
+            I18n.t("time_reports.sankey.unsorted", default: "Unsorted"),
             leftover,
             root[:color]
           )
@@ -219,7 +228,7 @@ class TimeReportsController < ApplicationController
         pct = (leftover.to_f / total_minutes * 100).round(1)
         direct_idx = nodes.size
         nodes << {
-          name: I18n.t("time_reports.sankey.direct", default: "Direct"),
+          name: I18n.t("time_reports.sankey.unsorted", default: "Unsorted"),
           value: leftover.to_f.round(2),
           percentage: pct,
           color: root[:color]
@@ -285,7 +294,7 @@ class TimeReportsController < ApplicationController
       if curr_direct.positive? || prev_direct.positive?
         rows << comparison_row(
           id: "direct",
-          name: I18n.t("time_reports.sankey.direct", default: "Direct"),
+          name: I18n.t("time_reports.sankey.unsorted", default: "Unsorted"),
           color: selected.color,
           icon: selected.lucide_icon,
           current_minutes: curr_direct,
@@ -318,39 +327,40 @@ class TimeReportsController < ApplicationController
     end
 
     # Produces the multi-series payload consumed by the
-    # `multi-line-time-chart` Stimulus controller. One series per root category
-    # (plus an "Uncategorized" bucket if relevant) with per-day minutes.
+    # `multi-line-time-chart` Stimulus controller.
     #
-    # When a category is selected from the dropdown, only that series is marked
-    # as `highlighted` so the JS side can dim the rest.
-    def build_chart_series_data(blocks, start_date, end_date, selected)
+    # Behavior by selection state:
+    # - No selection: one series per root category (the "Uncategorized" bucket
+    #   appears if any blocks lack a category). All highlighted.
+    # - Root without subcategories selected: one series per root category, only
+    #   the selected root is highlighted (the rest render dimmed).
+    # - Root *with* subcategories selected: the selected root's line is
+    #   replaced by one series per subcategory (plus an "Unsorted" series for
+    #   time logged directly on the root), all highlighted. The other root
+    #   categories stay in place and render dimmed.
+    def build_chart_series_data(blocks, start_date, end_date, selected, subcategory_colors = {})
       dates = (start_date..end_date).to_a
+      expand_subs = selected&.subcategories&.any?
 
       series_map = {}
 
       blocks.each do |block|
         cat  = block.time_category
         root = cat&.parent || cat
-        key  = root&.id || :uncategorized
 
-        series_map[key] ||= {
-          id:      root&.id || "uncategorized",
-          name:    root&.name || I18n.t("time_categories.uncategorized", default: "Uncategorized"),
-          color:   root&.color || TimeCategory::UNCATEGORIZED_COLOR,
-          per_day: Hash.new(0)
-        }
+        key, attrs = series_key_and_attrs(cat, root, selected, expand_subs, subcategory_colors)
 
+        series_map[key] ||= attrs.merge(per_day: Hash.new(0))
         series_map[key][:per_day][block.started_at.to_date] += block.duration_minutes
       end
 
       series = series_map.values.map do |s|
-        total = s[:per_day].values.sum
         {
           id:          s[:id],
           name:        s[:name],
           color:       s[:color],
-          total:       total,
-          highlighted: selected.nil? || selected.id == s[:id],
+          total:       s[:per_day].values.sum,
+          highlighted: s[:highlighted],
           values:      dates.map { |d| { date: d.to_s, minutes: s[:per_day][d] } }
         }
       end
@@ -366,25 +376,69 @@ class TimeReportsController < ApplicationController
       }
     end
 
-    # Collapses everything past the top MAX_CHART_SERIES into a single "Other"
-    # line so the chart stays readable with many categories. The currently
-    # highlighted category is always kept in the visible set even if it isn't
-    # in the top N, so the dropdown selection never silently disappears into
-    # the Other bucket.
+    # Classifies a block into the right series bucket for the chart. Separated
+    # from `build_chart_series_data` to keep its logic easy to follow.
+    def series_key_and_attrs(cat, root, selected, expand_subs, subcategory_colors = {})
+      if expand_subs && root&.id == selected.id
+        if cat.id == root.id
+          # Blocks logged directly on the parent (no subcategory picked) get
+          # their own "Unsorted" series alongside the real sub-series.
+          [
+            [ :direct, root.id ],
+            {
+              id:          "direct_#{root.id}",
+              name:        I18n.t("time_reports.sankey.unsorted", default: "Unsorted"),
+              color:       root.color,
+              highlighted: true
+            }
+          ]
+        else
+          [
+            [ :sub, cat.id ],
+            {
+              id:          cat.id,
+              name:        cat.name,
+              color:       subcategory_colors[cat.id] || cat.color || TimeCategory::UNCATEGORIZED_COLOR,
+              highlighted: true
+            }
+          ]
+        end
+      else
+        [
+          [ :root, root&.id || :uncategorized ],
+          {
+            id:          root&.id || "uncategorized",
+            name:        root&.name || I18n.t("time_categories.uncategorized", default: "Uncategorized"),
+            color:       root&.color || TimeCategory::UNCATEGORIZED_COLOR,
+            highlighted: selected.nil? || (!expand_subs && selected.id == root&.id)
+          }
+        ]
+      end
+    end
+
+    # Collapses the smallest series past MAX_CHART_SERIES into a single "Other"
+    # line so the chart stays readable with many categories. Any series marked
+    # `highlighted` is pinned visible first so the user's current focus never
+    # silently disappears into the Other bucket. Remaining slots are filled by
+    # the largest non-highlighted series; everything else is summed into Other.
     def bucket_small_series(series, dates, selected)
       return series if series.size <= MAX_CHART_SERIES
 
-      visible = series.first(MAX_CHART_SERIES)
+      pinned     = series.select { |s| s[:highlighted] }
+      candidates = series - pinned
 
-      if selected
-        highlighted = series.find { |s| s[:id] == selected.id }
-        if highlighted && !visible.include?(highlighted)
-          visible = visible.first(MAX_CHART_SERIES - 1) + [ highlighted ]
-        end
+      if selected.nil?
+        # No selection -> every series is "highlighted" by default, so fall
+        # back to a simple top-N trim instead of forcing them all visible.
+        pinned     = []
+        candidates = series
       end
 
+      slots_left = [ MAX_CHART_SERIES - pinned.size, 0 ].max
+      visible    = pinned + candidates.first(slots_left)
+
       hidden = series - visible
-      return series if hidden.empty?
+      return visible if hidden.empty?
 
       per_day = Hash.new(0)
       hidden.each do |s|
@@ -396,12 +450,118 @@ class TimeReportsController < ApplicationController
         name:        I18n.t("time_reports.index.other_categories", default: "Other"),
         color:       OTHER_SERIES_COLOR,
         total:       per_day.values.sum,
-        # "Other" is never the user's explicit selection, so it gets dimmed
-        # alongside the rest when a category is highlighted.
         highlighted: selected.nil?,
         values:      dates.map { |d| { date: d.to_s, minutes: per_day[d.to_s] } }
       }
 
       (visible + [ other_series ]).sort_by { |s| -s[:total] }
+    end
+
+    # Returns { sub_id => hex_color } for the selected parent's subcategories,
+    # or an empty hash when no expansion is needed. Each sub gets a distinct
+    # lightness variant of the parent's hue so subs look like siblings rather
+    # than identical twins.
+    def build_subcategory_color_map(selected)
+      return {} unless selected&.subcategories&.any?
+
+      # Stable order so colors don't reshuffle between requests.
+      subs = selected.subcategories.order(:id).to_a
+      shades = derive_shades(selected.color, subs.size)
+      subs.each_with_index.each_with_object({}) do |(sub, i), map|
+        map[sub.id] = shades[i]
+      end
+    end
+
+    # Overwrites sub colors in the aggregate hash (produced by
+    # `TimeBlock.aggregate_by_category`) with the derived variants.
+    def apply_subcategory_colors!(totals, color_map)
+      totals.each_value do |row|
+        row[:subcategories]&.each_value do |sub|
+          mapped = color_map[sub[:id]]
+          sub[:color] = mapped if mapped
+        end
+      end
+    end
+
+    # Produces `count` hex colors derived from `base_hex`. Lightness, hue and
+    # saturation are all nudged so each sub is clearly distinguishable while
+    # still reading as part of the parent's palette.
+    #
+    # - Lightness spans a wide range (0.30..0.78) for strong contrast.
+    # - Hue is shifted ±18° around the base for warm/cool siblings.
+    # - Saturation dips slightly toward the bright end so lighter shades
+    #   don't look washed-out.
+    def derive_shades(base_hex, count)
+      return [] if count.to_i.zero?
+
+      h, s, _l = rgb_to_hsl(*hex_to_rgb(base_hex))
+
+      min_l, max_l    = 0.30, 0.78
+      hue_spread      = 36.0 / 360.0  # total range; ±18° around the base
+      sat_spread      = 0.20          # total range around the base
+      sat_floor       = 0.35
+      sat_ceiling     = 0.95
+
+      count.times.map do |i|
+        t = count == 1 ? 0.5 : i / (count - 1).to_f
+        new_l = min_l + (max_l - min_l) * t
+        new_h = (h + hue_spread * (t - 0.5)) % 1.0
+        new_s = (s + sat_spread * (0.5 - t)).clamp(sat_floor, sat_ceiling)
+        rgb_to_hex(*hsl_to_rgb(new_h, new_s, new_l))
+      end
+    end
+
+    def hex_to_rgb(hex)
+      clean = hex.to_s.delete_prefix("#")
+      [ clean[0..1], clean[2..3], clean[4..5] ].map { |c| c.to_i(16) }
+    end
+
+    def rgb_to_hex(r, g, b)
+      format("#%02x%02x%02x", r.clamp(0, 255), g.clamp(0, 255), b.clamp(0, 255))
+    end
+
+    def rgb_to_hsl(r, g, b)
+      rn, gn, bn = r / 255.0, g / 255.0, b / 255.0
+      max = [ rn, gn, bn ].max
+      min = [ rn, gn, bn ].min
+      l = (max + min) / 2.0
+
+      if max == min
+        return [ 0.0, 0.0, l ]
+      end
+
+      d = max - min
+      s = l > 0.5 ? d / (2.0 - max - min) : d / (max + min)
+      h =
+        case max
+        when rn then (gn - bn) / d + (gn < bn ? 6 : 0)
+        when gn then (bn - rn) / d + 2
+        else         (rn - gn) / d + 4
+        end
+      [ h / 6.0, s, l ]
+    end
+
+    def hsl_to_rgb(h, s, l)
+      if s.zero?
+        v = (l * 255).round
+        return [ v, v, v ]
+      end
+
+      hue_to_rgb = ->(p, q, t) {
+        t += 1 if t < 0
+        t -= 1 if t > 1
+        return p + (q - p) * 6 * t       if t < 1.0 / 6
+        return q                         if t < 1.0 / 2
+        return p + (q - p) * (2.0 / 3 - t) * 6 if t < 2.0 / 3
+        p
+      }
+
+      q = l < 0.5 ? l * (1 + s) : l + s - l * s
+      p = 2 * l - q
+      [
+        (hue_to_rgb.call(p, q, h + 1.0 / 3) * 255).round,
+        (hue_to_rgb.call(p, q, h) * 255).round,
+        (hue_to_rgb.call(p, q, h - 1.0 / 3) * 255).round
+      ]
     end
 end
