@@ -42,7 +42,9 @@ class SureImport < Import
         valuations: counts["Valuation"] || 0,
         budgets: counts["Budget"] || 0,
         budget_categories: counts["BudgetCategory"] || 0,
-        rules: counts["Rule"] || 0
+        rules: counts["Rule"] || 0,
+        time_categories: counts["TimeCategory"] || 0,
+        time_blocks: counts["TimeBlock"] || 0
       }
     end
 

@@ -40,7 +40,9 @@ module ImportsHelper
       trades: DryRunResource.new(label: "Trades", icon: "arrow-left-right", text_class: "text-emerald-500", bg_class: "bg-emerald-500/5"),
       valuations: DryRunResource.new(label: "Valuations", icon: "trending-up", text_class: "text-pink-500", bg_class: "bg-pink-500/5"),
       budgets: DryRunResource.new(label: "Budgets", icon: "wallet", text_class: "text-indigo-500", bg_class: "bg-indigo-500/5"),
-      budget_categories: DryRunResource.new(label: "Budget Categories", icon: "pie-chart", text_class: "text-teal-500", bg_class: "bg-teal-500/5")
+      budget_categories: DryRunResource.new(label: "Budget Categories", icon: "pie-chart", text_class: "text-teal-500", bg_class: "bg-teal-500/5"),
+      time_categories: DryRunResource.new(label: "Time Categories", icon: "tag", text_class: "text-purple-500", bg_class: "bg-purple-500/5"),
+      time_blocks: DryRunResource.new(label: "Time Blocks", icon: "clock", text_class: "text-sky-500", bg_class: "bg-sky-500/5")
     }
 
     map[key]

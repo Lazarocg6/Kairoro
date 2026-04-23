@@ -1,5 +1,5 @@
 class Family::DataImporter
-  SUPPORTED_TYPES = %w[Account Category Tag Merchant Transaction Trade Valuation Transfer Budget BudgetCategory Rule].freeze
+  SUPPORTED_TYPES = %w[Account Category Tag Merchant Transaction Trade Valuation Transfer Budget BudgetCategory Rule TimeCategory TimeBlock].freeze
   ACCOUNTABLE_TYPES = Accountable::TYPES.freeze
 
   def initialize(family, ndjson_content)
@@ -12,7 +12,8 @@ class Family::DataImporter
       merchants: {},
       transactions: {},
       budgets: {},
-      securities: {}
+      securities: {},
+      time_categories: {}
     }
     @created_accounts = []
     @created_entries = []
@@ -34,6 +35,8 @@ class Family::DataImporter
       import_budgets(records["Budget"] || [])
       import_budget_categories(records["BudgetCategory"] || [])
       import_rules(records["Rule"] || [])
+      import_time_categories(records["TimeCategory"] || [])
+      import_time_blocks(records["TimeBlock"] || [])
     end
 
     # Reconnect transfer pairs that were not present as explicit Transfer records
@@ -580,6 +583,91 @@ class Family::DataImporter
       end
 
       value
+    end
+
+    def import_time_categories(records)
+      # Two-pass, mirroring `import_categories`: first create all categories
+      # without the parent_id wired, then backfill parent relationships using
+      # the old->new id map.
+      parent_mappings = {}
+
+      records.each do |record|
+        data = record["data"]
+        old_id = data["id"]
+        parent_id = data["parent_id"]
+
+        parent_mappings[old_id] = parent_id if parent_id.present?
+
+        existing = @family.time_categories.find_by(name: data["name"])
+        if existing
+          @id_mappings[:time_categories][old_id] = existing.id
+          next
+        end
+
+        time_category = @family.time_categories.build(
+          name: data["name"],
+          color: data["color"] || TimeCategory::UNCATEGORIZED_COLOR,
+          lucide_icon: data["lucide_icon"] || "circle-dashed"
+        )
+
+        time_category.save!
+        @id_mappings[:time_categories][old_id] = time_category.id
+      end
+
+      parent_mappings.each do |old_id, old_parent_id|
+        new_id = @id_mappings[:time_categories][old_id]
+        new_parent_id = @id_mappings[:time_categories][old_parent_id]
+
+        next unless new_id && new_parent_id
+
+        time_category = @family.time_categories.find(new_id)
+        next if time_category.parent_id.present?
+
+        time_category.update!(parent_id: new_parent_id)
+      end
+    end
+
+    def import_time_blocks(records)
+      records.each do |record|
+        data = record["data"]
+
+        user = resolve_time_block_user(data["user_email"])
+        next unless user
+
+        new_time_category_id = nil
+        if data["time_category_id"].present?
+          new_time_category_id = @id_mappings[:time_categories][data["time_category_id"]]
+        end
+
+        started_at = parse_time(data["started_at"])
+        ended_at   = parse_time(data["ended_at"])
+        next unless started_at && ended_at && ended_at > started_at
+
+        @family.time_blocks.create!(
+          user: user,
+          time_category_id: new_time_category_id,
+          started_at: started_at,
+          ended_at: ended_at,
+          notes: data["notes"]
+        )
+      end
+    end
+
+    def resolve_time_block_user(email)
+      @time_block_user_cache ||= {}
+      return @time_block_user_cache[email] if @time_block_user_cache.key?(email)
+
+      user = @family.users.find_by(email: email) if email.present?
+      user ||= (@time_block_user_fallback ||= @family.users.where(role: %w[super_admin admin]).first || @family.users.first)
+
+      @time_block_user_cache[email] = user
+    end
+
+    def parse_time(value)
+      return nil if value.blank?
+      Time.zone.parse(value.to_s)
+    rescue ArgumentError
+      nil
     end
 
     def find_or_create_security(ticker, currency)

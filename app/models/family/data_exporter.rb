@@ -287,6 +287,32 @@ class Family::DataExporter
         }.to_json
       end
 
+      # Export time categories (flat list; parent_id is remapped on import)
+      @family.time_categories.find_each do |time_category|
+        lines << {
+          type: "TimeCategory",
+          data: time_category.as_json
+        }.to_json
+      end
+
+      # Export time blocks. `user_email` is exported so the destination can
+      # resolve the owner by email (user UUIDs are not portable across DBs).
+      @family.time_blocks.includes(:user, :time_category).find_each do |block|
+        lines << {
+          type: "TimeBlock",
+          data: {
+            id: block.id,
+            time_category_id: block.time_category_id,
+            user_email: block.user&.email,
+            started_at: block.started_at,
+            ended_at: block.ended_at,
+            notes: block.notes,
+            created_at: block.created_at,
+            updated_at: block.updated_at
+          }
+        }.to_json
+      end
+
       lines.join("\n")
     end
 
