@@ -52,9 +52,9 @@
   </div>
 
   <%# Summary cards + line graph %>
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-    <div class="space-y-4">
-      <div class="bg-container rounded-xl shadow-border-xs p-4">
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:items-stretch">
+    <div class="flex flex-col gap-4">
+      <div class="bg-container rounded-xl shadow-border-xs p-4 flex-1 flex flex-col justify-center">
         <p class="text-xs text-secondary uppercase tracking-wide"><%= t("time_reports.index.total") %></p>
         <p class="text-2xl font-medium text-primary"><%= format_minutes(@total_current_minutes) %></p>
         <% if @total_previous_minutes > 0 %>
@@ -66,24 +66,45 @@
         <% end %>
       </div>
 
-      <div class="bg-container rounded-xl shadow-border-xs p-4">
+      <div class="bg-container rounded-xl shadow-border-xs p-4 flex-1 flex flex-col justify-center">
         <p class="text-xs text-secondary uppercase tracking-wide"><%= t("time_reports.index.daily_average") %></p>
         <p class="text-2xl font-medium text-primary">
           <%= format_minutes((@total_current_minutes.to_f / @days_in_period).round) %>
         </p>
         <p class="text-xs text-secondary"><%= t("time_reports.index.over_days", count: @days_in_period) %></p>
       </div>
+
+      <div class="bg-container rounded-xl shadow-border-xs p-4 flex-1 flex flex-col justify-center">
+        <p class="text-xs text-secondary uppercase tracking-wide"><%= t("time_reports.index.variation") %></p>
+        <% variation = @total_current_minutes - @total_previous_minutes %>
+        <% if @total_previous_minutes > 0 || @total_current_minutes > 0 %>
+          <p class="text-2xl font-medium text-primary">
+            <%= variation.positive? ? "+" : (variation.negative? ? "-" : "") %><%= format_minutes(variation.abs) %>
+          </p>
+          <% if @total_previous_minutes.positive? %>
+            <% percent = ((variation.to_f / @total_previous_minutes) * 100).round(1) %>
+            <p class="text-xs text-secondary">
+              <%= percent.positive? ? "+" : "" %><%= percent %>% <%= t("time_reports.index.vs_previous") %>
+            </p>
+          <% else %>
+            <p class="text-xs text-secondary"><%= t("time_reports.index.no_previous_data") %></p>
+          <% end %>
+        <% else %>
+          <p class="text-2xl font-medium text-primary">0m</p>
+          <p class="text-xs text-secondary"><%= t("time_reports.index.vs_previous") %></p>
+        <% end %>
+      </div>
     </div>
 
-    <div class="bg-container rounded-xl shadow-border-xs p-6 lg:col-span-2">
+    <div class="bg-container rounded-xl shadow-border-xs p-6 lg:col-span-2 flex flex-col">
       <h2 class="text-lg font-medium mb-4"><%= t("time_reports.index.evolution") %></h2>
       <% if @chart_data[:values].any? { |v| v[:value].positive? } %>
         <div id="time-evolution-chart"
-             class="w-full h-56"
+             class="w-full flex-1 min-h-56"
              data-controller="time-series-chart"
              data-time-series-chart-data-value="<%= @chart_data.to_json %>"></div>
       <% else %>
-        <div class="py-16 text-center text-secondary text-sm">
+        <div class="flex-1 flex items-center justify-center text-secondary text-sm">
           <%= t("time_reports.index.no_data") %>
         </div>
       <% end %>

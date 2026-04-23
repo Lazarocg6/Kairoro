@@ -10,6 +10,8 @@ en:
       end_date: To
       total: Total time
       daily_average: Daily average
+      variation: Variation
+      no_previous_data: No data for previous period
       over_days:
         one: "over 1 day"
         other: "over %{count} days"
